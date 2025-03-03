@@ -1,0 +1,291 @@
+---
+title: "Assignment 3"
+format: html
+editor: visual
+---
+
+```{r}
+
+rm(list=ls())
+
+library(curl)
+library(dplyr)
+library(httr)
+library(ggplot2)
+library(readxl)
+library(tidyr)
+library(tidyverse)
+
+ 
+
+```
+
+## Task 1.
+
+```{r}
+# Laster datasett
+url <- "https://www.ifw-kiel.de/fileadmin/Dateiverwaltung/IfW-Publications/fis-import/f319e1c8-5654-4cd6-b4c7-5722ae437d30-Ukraine_Support_Tracker_Release_21.xlsx"
+
+ifw_file <- tempfile(fileext = ".xlsx")
+download.file(url, ifw_file)
+
+# Laster ned sheet 12 fra excel
+df <- read_excel(ifw_file, sheet = 12)
+
+# Sjekker datasett og struktur
+df
+str(df)
+
+# Rydder data
+df <- df[-c(1:8),-c(7, 8) ]   
+colnames(df) <- df[1, ]   
+df <- df[-1, ] 
+df <- df %>% filter(rowSums(is.na(.)) < ncol(df))
+
+# Konverter alle unntatt den første kolonnen til tall, og beholder tallene som desimaler.
+df[,-1] <- lapply(df[,-1], function(x) round(as.numeric(x), 2))
+
+# Sjekker igjen strukturen etter rydding
+str(df)
+
+# Konverterer data til long format
+df_long <- df %>%
+  pivot_longer(cols = -Country, names_to = "Category", values_to = "Value") %>% 
+  filter(Country != "Total", Category != "Total") 
+
+# Lager figur
+figur_task1 <- df_long %>% 
+  ggplot(aes(x = reorder(Country, Value, sum), y = Value, fill = Category)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  
+  scale_fill_manual(values = c("darkblue", "lightgreen", "darkred", "blue")) +
+  scale_y_continuous(limits = c(0, 120), 
+                     breaks = seq(0, 120, by = 5),
+                     expand = c(0, 0)) +
+  labs(title = "Figure 6. Total bilateral commitments plus refugee costs (billion Euros)",
+       x = "", y = "", fill = "") +
+  theme_minimal()+
+  theme(panel.grid.major.y = element_blank(),   
+        panel.grid.minor.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.text.y = element_text(size = 4)) +
+  annotate("text", x = 1, y = 118, label = "billion Euros", size = 3, hjust = 1)
+figur_task1
+
+
+```
+
+## Task 2.
+
+```{r}
+# Hent data
+url2 <- "https://raw.githubusercontent.com/ywchiu/rcookbook/master/chapter7/superstore_sales.csv"
+data_sales <- read_csv(url2)
+
+# Sjekk datasettet
+glimpse(data_sales)
+
+
+```
+
+#### 1:
+
+```{r}
+
+# Konverterer datoformat som måned
+data_sales <- data_sales %>%
+  mutate(Month = month(`Order Date`, label = TRUE, abbr = TRUE))
+
+# Beregner månedlig salg  
+monthly_sales <- data_sales %>%
+  group_by(Month) %>%
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE)) %>%
+  arrange(desc(Total_Sales))
+
+# Figur for månedlig salg
+figur_månedligsalg <- monthly_sales %>% 
+  ggplot(aes(x = reorder(Month, -Total_Sales), y = Total_Sales)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Totalt månedligsalg", 
+       x = "Måned", 
+       y = "Totalt Salg") +
+  theme_minimal()
+figur_månedligsalg
+
+```
+
+#### 2:
+
+```{r}
+# Beregner totalsalg per provins
+province_sales <- data_sales %>%
+  group_by(Province) %>%
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE)) %>%
+  arrange(desc(Total_Sales))
+
+# Slår av vitenskapelig notasjon
+# For å sikre at heltallene vises på y-aksen i figur for provinssalg
+options(scipen = 10) 
+
+# Figur for provinssalg
+figur_provinssales <- province_sales %>% 
+  ggplot(aes(x = reorder(Province, Total_Sales), y = Total_Sales)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  labs(title = "Totalt provinssalg", 
+       x = "Provins", 
+       y = "Totalt Salg") +
+  theme_minimal()
+figur_provinssales
+
+```
+
+#### 3:
+
+```{r}
+# Viser produktsnavn på produktkategori-kolonnen
+unique(data_sales[["Product Category"]])
+
+
+# Beregner produktkategorien med høyest salg per provins
+mestsolgt_produktkategorien <- data_sales %>%
+  group_by(Province, `Product Category`) %>%
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE)) %>%
+  slice_max(Total_Sales, n = 1) %>%
+  ungroup()
+
+
+# Figur for produktkategorien med høyest salg per provins
+figur_mestsolgt_kategori <- mestsolgt_produktkategorien %>% 
+  ggplot(aes(x = reorder(Province, Total_Sales), 
+             y = Total_Sales,
+             fill = `Product Category`)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Den mest solgte produktkategorien per provins", 
+       x = "Provins", 
+       y = "Totalt Salg") +
+  theme_minimal()
+figur_mestsolgt_kategori
+
+```
+
+## Task 3.
+
+```{r}
+# Laster ned og viser datasett gapminder
+library(gapminder)
+gapminder
+
+```
+
+#### a)
+
+```{r}
+# Minimum og maksimum forventet levealder i Asia
+asia_forventet_levealder <- gapminder %>%
+  filter(continent == "Asia") %>%
+  group_by(year) %>%
+  summarise(min_lifeExp = min(lifeExp), 
+            min_country = country[which.min(lifeExp)],
+            max_lifeExp = max(lifeExp),
+            max_country = country[which.max(lifeExp)])
+asia_forventet_levealder
+
+```
+
+#### b)
+
+```{r}
+# Beregner årlige logaritmiske vekstene 
+log_endring <- asia_forventet_levealder %>%
+  mutate(min_log_vokst = log(min_lifeExp) - log(lag(min_lifeExp)),
+         max_log_vokst = log(max_lifeExp) - log(lag(max_lifeExp))) 
+log_endring
+
+# Finner minimum og maksimum vekstene etter log differensialer
+vokst <-log_endring %>% 
+  summarise(total_min_vokst = sum(min_log_vokst, na.rm = TRUE),
+            total_max_vokst = sum(max_log_vokst, na.rm = TRUE))
+vokst
+
+# 0.4199 total økning i minimum levealder
+# 0.2337 total økning i maksimum levealder
+# Minimum levealder har økt mer enn maksimum levealder i Asia.
+ 
+```
+
+#### c)
+
+```{r}
+# Beregner gjennomsnittlig forventet levealder og BNP per land
+gjennomsnittlig_levealder_bnp <- gapminder %>%
+  group_by(country) %>%
+  summarise(gjennomsnittlig_levealder = mean(lifeExp), 
+            gjennomsnittlig_bnp = mean(gdpPercap))
+gjennomsnittlig_levealder_bnp
+
+# Figur for topp 20 land etter gjennomsnittlig levealder
+figur_levealder <- gjennomsnittlig_levealder_bnp %>%
+  slice_max(gjennomsnittlig_levealder, n = 20) %>% 
+  ggplot(aes(x = gjennomsnittlig_levealder, 
+             y = fct_reorder(country, gjennomsnittlig_levealder))) +
+  geom_point() +
+  labs(title = "Topp 20 land etter gjennomsnittlig forventet levealder", 
+       x = "Gjennomsnittlig forventet levealder", 
+       y = "Land")
+figur_levealder
+
+# Figur for topp 20 land etter gjennomsnittlig BNP 
+figur_bnp <- gjennomsnittlig_levealder_bnp %>%
+  slice_max(gjennomsnittlig_bnp, n = 20) %>% 
+  ggplot(aes(x = gjennomsnittlig_bnp, 
+             y = fct_reorder(country, gjennomsnittlig_bnp))) +
+  geom_point() +
+  labs(title = "Topp 20 land etter gjennomsnittlig BNP", 
+       x = "Gjennomsnittlig BNP", 
+       y = "Land")
+figur_bnp
+
+```
+
+#### d)
+
+```{r}
+# Figur for gjennomsnittlig levealder mot BNP, med log-skala  
+figur_levealder_mot_bnp <- gapminder %>%
+  group_by(country, continent) %>%  
+  summarise(gjennomsnittlig_levealder = mean(lifeExp), 
+            gjennomsnittlig_bnp = mean(gdpPercap)) %>% 
+  ggplot(aes(x = gjennomsnittlig_bnp, 
+             y = gjennomsnittlig_levealder, 
+             color = `continent`)) +
+  geom_point() +
+  scale_x_log10() + 
+  scale_y_log10() +
+  labs(title = "Gjennomsnittlig forventet levealder vs BNP, med log-skala(log10)", 
+       x = "Gjennomsnittlig BNP", 
+       y = "Gjennomsnittlig forventet levealder", 
+       color = "Kontinent")
+figur_levealder_mot_bnp
+
+ 
+```
+
+#### e)
+
+```{r}
+# 5-års endring i forventet levealder innen hvert kontinent
+økning_levealder <- gapminder %>%
+  group_by(country) %>%
+  mutate(lifeExp_økning = lifeExp - first(lifeExp), 
+         lifeExp_diff = lifeExp - lag(lifeExp)) %>%
+  filter(!is.na(lifeExp_økning) & !is.na(lifeExp_diff)) %>%
+  group_by(continent) %>%
+  arrange(lifeExp_økning) %>%
+  slice(1) %>% 
+  select(country, continent, year, lifeExp, lifeExp_økning, lifeExp_diff)
+økning_levealder
+
+
+```
